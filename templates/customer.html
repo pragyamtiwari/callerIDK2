@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Customer Authentication</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center">
+  <div class="bg-white rounded-xl shadow-lg w-full max-w-md p-8">
+    <h1 class="text-2xl font-semibold text-blue-600 mb-6 text-center">Customer Authentication</h1>
+
+    <div id="codeEntry">
+      <h2 class="text-lg font-medium mb-2 text-gray-700 text-center">Enter Rep Code</h2>
+      <input id="repCodeInput" maxlength="5" placeholder="5-digit code"
+        class="w-full p-3 border border-gray-300 rounded-md mb-3 focus:outline-none focus:ring focus:border-blue-500">
+      <button onclick="submitCode()"
+        class="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 transition">Start</button>
+      <p id="codeError" class="text-red-500 text-sm mt-2 text-center"></p>
+    </div>
+
+    <div id="formContainer" class="mt-4" style="display: none;"></div>
+    <div id="faceStatus" class="text-center mt-4 text-sm text-gray-600"></div>
+  </div>
+
+  <script>
+    let code = "";
+    let step = 0;
+    const steps = ["name", "phone_number", "dob", "ssn", "email_2fa", "captcha"];
+
+    function submitCode() {
+      code = document.getElementById("repCodeInput").value;
+      fetch('/validate_code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: code })
+      }).then(res => res.json()).then(data => {
+        if (data.valid) {
+          document.getElementById("codeEntry").style.display = "none";
+          document.getElementById("formContainer").style.display = "block";
+          nextStep();
+        } else {
+          document.getElementById("codeError").innerText = "Invalid code.";
+        }
+      });
+    }
+
+    function nextStep() {
+      const container = document.getElementById("formContainer");
+      container.innerHTML = "";
+      const current = steps[step];
+
+      let inputs = current === "name"
+        ? `
+          <input placeholder="First Name" id="first" class="w-full p-2 border border-gray-300 rounded-md mb-2">
+          <input placeholder="Middle Initial" id="middle" class="w-full p-2 border border-gray-300 rounded-md mb-2">
+          <input placeholder="Last Name" id="last" class="w-full p-2 border border-gray-300 rounded-md mb-4">
+        `
+        : `<input id="value" placeholder="${current.replace('_', ' ')}" class="w-full p-2 border border-gray-300 rounded-md mb-4">`;
+
+      container.innerHTML = `
+        <p class="text-gray-700 mb-2">Enter your <strong>${current.replace('_', ' ')}</strong>:</p>
+        ${inputs}
+        <button onclick="submitStep()" class="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 transition">Next</button>
+      `;
+    }
+
+    function submitStep() {
+      const current = steps[step];
+      let value = current === "name"
+        ? {
+          first: document.getElementById("first").value.trim(),
+          middle: document.getElementById("middle").value.trim(),
+          last: document.getElementById("last").value.trim()
+        }
+        : document.getElementById("value").value.trim();
+
+      fetch('/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ field: current, value, code })
+      }).then(res => res.json()).then(data => {
+        if (data.success) {
+          step++;
+          if (step < steps.length) {
+            nextStep();
+          } else {
+            fetch('/get_phrase')
+              .then(res => res.json())
+              .then(data => {
+                document.getElementById("formContainer").innerHTML = `
+                  <h3 class="text-blue-600 font-semibold mb-2">Say this aloud:</h3>
+                  <blockquote class="bg-gray-100 border-l-4 border-blue-600 p-4 italic mb-4">${data.phrase}</blockquote>
+                  <button onclick="startRecording()" class="w-full bg-green-600 text-white py-2 rounded-md mb-2 hover:bg-green-700 transition">Start Recording</button>
+                  <button onclick="stopRecording()" class="w-full bg-red-600 text-white py-2 rounded-md hover:bg-red-700 transition">Stop & Submit</button>
+                  <p id="recordStatus" class="text-sm text-gray-600 mt-2 text-center"></p>
+                `;
+              });
+          }
+        } else {
+          alert("Invalid input. Try again.");
+        }
+      });
+    }
+
+    let mediaRecorder;
+    let audioChunks = [];
+
+    function startRecording() {
+      document.getElementById("recordStatus").innerText = "Recording...";
+      audioChunks = [];
+      navigator.mediaDevices.getUserMedia({ audio: true })
+        .then(stream => {
+          mediaRecorder = new MediaRecorder(stream);
+          mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+          mediaRecorder.start();
+        }).catch(err => {
+          alert("Mic access error: " + err);
+        });
+    }
+
+    function stopRecording() {
+      mediaRecorder.stop();
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(audioChunks, { type: 'audio/wav' });
+        const file = new File([blob], "audio.wav", { type: 'audio/wav' });
+        const formData = new FormData();
+        formData.append("audio", file);
+
+        fetch('/check_human', {
+          method: 'POST',
+          body: formData
+        })
+        .then(res => res.json())
+        .then(data => {
+          document.getElementById("recordStatus").innerText = data.isHuman ? "✅ Human detected" : "❌ AI detected";
+
+          fetch('/set_decision', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code, ishuman: data.isHuman ? 1 : 0, issamevoice: 1 })
+          });
+
+          if (data.isHuman) {
+            captureFramesForFaceCheck();
+          }
+        });
+      };
+    }
+
+    function captureFramesForFaceCheck() {
+      const faceStatus = document.getElementById("faceStatus");
+      faceStatus.innerText = "Checking face...";
+
+      navigator.mediaDevices.getUserMedia({ video: true })
+        .then(stream => {
+          const video = document.createElement("video");
+          video.srcObject = stream;
+          video.play();
+
+          const canvas = document.createElement("canvas");
+          const ctx = canvas.getContext("2d");
+          let matched = false;
+          let attempts = 0;
+
+          const interval = setInterval(() => {
+            if (attempts++ > 25 || matched) {
+              clearInterval(interval);
+              stream.getTracks().forEach(track => track.stop());
+              faceStatus.innerText = matched ? "✅ Face matched" : "❌ Face not recognized";
+              return;
+            }
+
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            canvas.toBlob(blob => {
+              const formData = new FormData();
+              formData.append("frame", blob, "frame.jpg");
+
+              fetch('/check_face', {
+                method: 'POST',
+                body: formData
+              })
+              .then(res => res.json())
+              .then(data => {
+                if (data.match) {
+                  matched = true;
+                }
+              });
+            }, 'image/jpeg');
+          }, 200);
+        })
+        .catch(err => {
+          faceStatus.innerText = "Camera error: " + err;
+        });
+    }
+  </script>
+</body>
+</html>
