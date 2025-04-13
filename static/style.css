@@ -1,0 +1,28 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Optional: Custom theme extension if using Tailwind CLI build process */
+
+:root {
+  --blue: #3b82f6;
+  --blue-dark: #1e40af;
+  --bg: #f9fafb;
+  --text: #1f2937;
+  --gray: #f3f4f6;
+  --border: #e5e7eb;
+}
+
+/* Optional enhancements for smoothness or consistency */
+input, button {
+  transition: all 0.2s ease-in-out;
+}
+
+blockquote {
+  font-style: italic;
+  border-left: 4px solid var(--blue);
+  background-color: var(--gray);
+  padding: 1rem;
+  margin: 1rem 0;
+  border-radius: 0.5rem;
+}
