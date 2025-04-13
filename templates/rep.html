@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Rep Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center">
+  <div class="bg-white rounded-xl shadow-lg w-full max-w-xl p-8">
+    <h1 class="text-2xl font-semibold text-blue-600 mb-4 text-center">Rep Dashboard</h1>
+    
+    <p class="text-gray-700 mb-6 text-center">
+      <strong class="text-gray-600">Code:</strong>
+      <span class="text-blue-600 font-mono text-xl">{{ code }}</span>
+    </p>
+
+    <table id="statusTable" class="w-full text-sm text-left border-t border-gray-200">
+      <!-- Populated dynamically -->
+    </table>
+
+    
+  <script>
+    let code = "{{ code }}";
+
+    function refreshStatus() {
+      fetch(`/status/${code}`)
+        .then(res => res.json())
+        .then(data => {
+          const table = document.getElementById("statusTable");
+          table.innerHTML = `
+            <thead class="text-xs text-gray-500 uppercase tracking-wider">
+              <tr><th class="py-2">Field</th><th class="py-2">Status</th></tr>
+            </thead>
+            <tbody>
+              ${Object.entries(data)
+                .filter(([key]) => key !== 'code')
+                .map(([key, val]) => `
+                  <tr class="border-t border-gray-200">
+                    <td class="py-2 capitalize">${key.replaceAll('_', ' ')}</td>
+                    <td class="py-2">
+                      ${val === 1 ? "✅" : val === 0 ? "❌" : val}
+                    </td>
+                  </tr>
+                `).join('')}
+            </tbody>
+          `;
+        });
+    }
+
+    function submitDecision(ishuman, issamevoice) {
+      fetch('/set_decision', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, ishuman: ishuman ? 1 : 0, issamevoice: issamevoice ? 1 : 0 })
+      }).then(() => alert('Decision submitted.'));
+    }
+
+    setInterval(refreshStatus, 1000);
+  </script>
+</body>
+</html>
